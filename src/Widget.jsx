@@ -6,11 +6,18 @@ const STORAGE_KEY = 'todo-widget-data';
 const DEFAULT_DATA = {
   headings: [
     { id: 'inbox', title: 'Inbox' },
+    { id: 'backlog', title: 'Backlog' },
     { id: 'today', title: 'Today' },
-    { id: 'upcoming', title: 'Upcoming' },
     { id: 'done', title: 'Done' }
   ],
   todos: []
+};
+
+const VIEWS = {
+  PLANNING: 'planning',
+  TODAY: 'today',
+  BOARD: 'board',
+  CALENDAR: 'calendar'
 };
 
 // Smart date parser - extracts dates from natural language
@@ -135,11 +142,19 @@ export default function Widget() {
   const [draggedTodo, setDraggedTodo] = useState(null);
   const [selectedTodo, setSelectedTodo] = useState(null);
   const [editingTodo, setEditingTodo] = useState(null);
+  const [currentView, setCurrentView] = useState(() => {
+    return localStorage.getItem('todo-widget-view') || VIEWS.PLANNING;
+  });
 
   // Persist to localStorage whenever data changes
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }, [data]);
+
+  // Persist view selection
+  useEffect(() => {
+    localStorage.setItem('todo-widget-view', currentView);
+  }, [currentView]);
 
   const addTodo = (e) => {
     e.preventDefault();
@@ -208,6 +223,40 @@ export default function Widget() {
     setEditingTodo(prev => ({
       ...prev,
       [field]: value
+    }));
+  };
+
+  // Quick action: Move todo to a specific heading
+  const moveTodoToHeading = (todoId, headingId) => {
+    setData(prev => ({
+      ...prev,
+      todos: prev.todos.map(t =>
+        t.id === todoId ? { ...t, headingId } : t
+      )
+    }));
+  };
+
+  // Quick action: Snooze todo (set due date)
+  const snoozeTodo = (todoId, days) => {
+    const newDate = new Date();
+    newDate.setDate(newDate.getDate() + days);
+    const formatted = newDate.toISOString().split('T')[0];
+
+    setData(prev => ({
+      ...prev,
+      todos: prev.todos.map(t =>
+        t.id === todoId ? { ...t, dueDate: formatted } : t
+      )
+    }));
+  };
+
+  // Quick action: Update due date inline
+  const updateTodoDueDate = (todoId, dueDate) => {
+    setData(prev => ({
+      ...prev,
+      todos: prev.todos.map(t =>
+        t.id === todoId ? { ...t, dueDate } : t
+      )
     }));
   };
 
@@ -293,10 +342,260 @@ export default function Widget() {
     return '';
   };
 
+  // View-specific rendering helpers
+  const renderPlanningView = () => {
+    const inboxTodos = data.todos
+      .filter(t => t.headingId === 'inbox')
+      .sort((a, b) => {
+        // Sort by due date (null dates last)
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return new Date(a.dueDate) - new Date(b.dueDate);
+      });
+
+    return (
+      <div className="todo-widget-planning-view">
+        <div className="todo-widget-view-header">
+          <h4>Planning - Inbox ({inboxTodos.length})</h4>
+          <p className="todo-widget-view-subtitle">Sort tasks by priority and move them to your backlog or today's list</p>
+        </div>
+        <div className="todo-widget-planning-list">
+          {inboxTodos.length === 0 ? (
+            <div className="todo-widget-empty">
+              Your inbox is empty! Add a task above or you're all caught up.
+            </div>
+          ) : (
+            inboxTodos.map(todo => (
+              <div key={todo.id} className="todo-widget-planning-item">
+                <div className="todo-widget-planning-item-main">
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    onChange={() => moveTodoToHeading(todo.id, 'done')}
+                    className="todo-widget-checkbox"
+                  />
+                  <div className="todo-widget-planning-item-content" onClick={(e) => openTodoModal(todo, e)}>
+                    <span className="todo-widget-planning-item-text">
+                      {todo.text}
+                      {todo.description && <span className="todo-widget-has-description">📝</span>}
+                    </span>
+                    {todo.dueDate && (
+                      <span className={`todo-widget-due-date ${getDueDateClass(todo.dueDate)}`}>
+                        {formatDueDate(todo.dueDate)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="todo-widget-planning-item-actions">
+                  <input
+                    type="date"
+                    value={todo.dueDate || ''}
+                    onChange={(e) => updateTodoDueDate(todo.id, e.target.value)}
+                    className="todo-widget-inline-date"
+                    title="Set due date"
+                  />
+                  <div className="todo-widget-snooze-buttons">
+                    <button
+                      onClick={() => snoozeTodo(todo.id, 1)}
+                      className="todo-widget-snooze-btn"
+                      title="Tomorrow"
+                    >
+                      Tomorrow
+                    </button>
+                    <button
+                      onClick={() => snoozeTodo(todo.id, 7)}
+                      className="todo-widget-snooze-btn"
+                      title="Next week"
+                    >
+                      Next Week
+                    </button>
+                  </div>
+                  <div className="todo-widget-move-buttons">
+                    <button
+                      onClick={() => moveTodoToHeading(todo.id, 'backlog')}
+                      className="todo-widget-move-btn todo-widget-move-backlog"
+                    >
+                      → Backlog
+                    </button>
+                    <button
+                      onClick={() => moveTodoToHeading(todo.id, 'today')}
+                      className="todo-widget-move-btn todo-widget-move-today"
+                    >
+                      → Today
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => deleteTodo(todo.id)}
+                    className="todo-widget-delete-btn"
+                    title="Delete"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTodayView = () => {
+    const todayTodos = data.todos.filter(t => t.headingId === 'today');
+
+    return (
+      <div className="todo-widget-today-view">
+        <div className="todo-widget-view-header">
+          <h4>Today's Focus ({todayTodos.length})</h4>
+          <p className="todo-widget-view-subtitle">Focus on completing these tasks today</p>
+        </div>
+        <div className="todo-widget-today-list">
+          {todayTodos.length === 0 ? (
+            <div className="todo-widget-empty">
+              No tasks for today. Move items from your backlog or inbox!
+            </div>
+          ) : (
+            todayTodos.map(todo => (
+              <div key={todo.id} className="todo-widget-today-item">
+                <input
+                  type="checkbox"
+                  checked={false}
+                  onChange={() => moveTodoToHeading(todo.id, 'done')}
+                  className="todo-widget-checkbox-large"
+                />
+                <div className="todo-widget-today-item-content" onClick={(e) => openTodoModal(todo, e)}>
+                  <span className="todo-widget-today-item-text">
+                    {todo.text}
+                    {todo.description && <span className="todo-widget-has-description">📝</span>}
+                  </span>
+                  {todo.dueDate && (
+                    <span className={`todo-widget-due-date ${getDueDateClass(todo.dueDate)}`}>
+                      {formatDueDate(todo.dueDate)}
+                    </span>
+                  )}
+                  {todo.description && (
+                    <div className="todo-widget-today-description-preview">
+                      {todo.description.substring(0, 100)}...
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => deleteTodo(todo.id)}
+                  className="todo-widget-delete-btn"
+                  title="Delete"
+                >
+                  ×
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCalendarView = () => {
+    const todosByDate = {};
+    const todosWithDates = data.todos.filter(t => t.dueDate && t.headingId !== 'done');
+
+    todosWithDates.forEach(todo => {
+      if (!todosByDate[todo.dueDate]) {
+        todosByDate[todo.dueDate] = [];
+      }
+      todosByDate[todo.dueDate].push(todo);
+    });
+
+    const sortedDates = Object.keys(todosByDate).sort((a, b) => new Date(a) - new Date(b));
+
+    return (
+      <div className="todo-widget-calendar-view">
+        <div className="todo-widget-view-header">
+          <h4>Calendar Timeline</h4>
+          <p className="todo-widget-view-subtitle">Tasks organized by due date</p>
+        </div>
+        <div className="todo-widget-calendar-list">
+          {sortedDates.length === 0 ? (
+            <div className="todo-widget-empty">
+              No tasks with due dates. Add due dates to see them here!
+            </div>
+          ) : (
+            sortedDates.map(date => (
+              <div key={date} className="todo-widget-calendar-group">
+                <h5 className="todo-widget-calendar-date">
+                  {new Date(date).toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                  })}
+                  <span className={`todo-widget-due-date ${getDueDateClass(date)}`}>
+                    {formatDueDate(date)}
+                  </span>
+                </h5>
+                <div className="todo-widget-calendar-items">
+                  {todosByDate[date].map(todo => (
+                    <div key={todo.id} className="todo-widget-calendar-item">
+                      <input
+                        type="checkbox"
+                        checked={false}
+                        onChange={() => moveTodoToHeading(todo.id, 'done')}
+                        className="todo-widget-checkbox"
+                      />
+                      <div className="todo-widget-calendar-item-content" onClick={(e) => openTodoModal(todo, e)}>
+                        <span>{todo.text}</span>
+                        <span className="todo-widget-calendar-item-category">
+                          {data.headings.find(h => h.id === todo.headingId)?.title}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => deleteTodo(todo.id)}
+                        className="todo-widget-delete-btn-small"
+                        title="Delete"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="todo-widget">
       <div className="todo-widget-header">
         <h3>Todo List</h3>
+        <div className="todo-widget-view-switcher">
+          <button
+            className={`todo-widget-view-tab ${currentView === VIEWS.PLANNING ? 'active' : ''}`}
+            onClick={() => setCurrentView(VIEWS.PLANNING)}
+          >
+            Planning
+          </button>
+          <button
+            className={`todo-widget-view-tab ${currentView === VIEWS.TODAY ? 'active' : ''}`}
+            onClick={() => setCurrentView(VIEWS.TODAY)}
+          >
+            Today
+          </button>
+          <button
+            className={`todo-widget-view-tab ${currentView === VIEWS.BOARD ? 'active' : ''}`}
+            onClick={() => setCurrentView(VIEWS.BOARD)}
+          >
+            Board
+          </button>
+          <button
+            className={`todo-widget-view-tab ${currentView === VIEWS.CALENDAR ? 'active' : ''}`}
+            onClick={() => setCurrentView(VIEWS.CALENDAR)}
+          >
+            Calendar
+          </button>
+        </div>
       </div>
 
       <form className="todo-widget-input" onSubmit={addTodo}>
@@ -316,79 +615,85 @@ export default function Widget() {
         <button type="submit" className="todo-widget-add-btn">Add</button>
       </form>
 
-      <div className="todo-widget-columns">
-        {data.headings.map(heading => (
-          <div
-            key={heading.id}
-            className="todo-widget-column"
-            onDragOver={handleDragOver}
-            onDrop={(e) => handleDrop(e, heading.id)}
-          >
-            <h4 className="todo-widget-column-title">
-              {heading.title}
-              <span className="todo-widget-count">
-                {getTodosByHeading(heading.id).length}
-              </span>
-            </h4>
+      {currentView === VIEWS.PLANNING && renderPlanningView()}
+      {currentView === VIEWS.TODAY && renderTodayView()}
+      {currentView === VIEWS.CALENDAR && renderCalendarView()}
 
-            <div className="todo-widget-items">
-              {getTodosByHeading(heading.id).map(todo => (
-                <div
-                  key={todo.id}
-                  className={`todo-widget-item ${draggedTodo?.id === todo.id ? 'todo-widget-dragging' : ''}`}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, todo)}
-                  onDragEnd={handleDragEnd}
-                >
-                  <div className="todo-widget-item-content">
-                    <input
-                      type="checkbox"
-                      checked={todo.headingId === 'done'}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        toggleTodoDone(todo.id);
-                      }}
-                      className="todo-widget-checkbox"
-                    />
-                    <div
-                      className="todo-widget-item-text"
-                      onClick={(e) => openTodoModal(todo, e)}
-                    >
-                      <span className={todo.headingId === 'done' ? 'todo-widget-done-text' : ''}>
-                        {todo.text}
-                        {todo.description && (
-                          <span className="todo-widget-has-description" title="Has description">📝</span>
-                        )}
-                      </span>
-                      {todo.dueDate && (
-                        <span className={`todo-widget-due-date ${getDueDateClass(todo.dueDate)}`}>
-                          {formatDueDate(todo.dueDate)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteTodo(todo.id);
-                    }}
-                    className="todo-widget-delete-btn"
-                    title="Delete todo"
+      {currentView === VIEWS.BOARD && (
+        <div className="todo-widget-columns">
+          {data.headings.map(heading => (
+            <div
+              key={heading.id}
+              className="todo-widget-column"
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, heading.id)}
+            >
+              <h4 className="todo-widget-column-title">
+                {heading.title}
+                <span className="todo-widget-count">
+                  {getTodosByHeading(heading.id).length}
+                </span>
+              </h4>
+
+              <div className="todo-widget-items">
+                {getTodosByHeading(heading.id).map(todo => (
+                  <div
+                    key={todo.id}
+                    className={`todo-widget-item ${draggedTodo?.id === todo.id ? 'todo-widget-dragging' : ''}`}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, todo)}
+                    onDragEnd={handleDragEnd}
                   >
-                    ×
-                  </button>
-                </div>
-              ))}
+                    <div className="todo-widget-item-content">
+                      <input
+                        type="checkbox"
+                        checked={todo.headingId === 'done'}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          toggleTodoDone(todo.id);
+                        }}
+                        className="todo-widget-checkbox"
+                      />
+                      <div
+                        className="todo-widget-item-text"
+                        onClick={(e) => openTodoModal(todo, e)}
+                      >
+                        <span className={todo.headingId === 'done' ? 'todo-widget-done-text' : ''}>
+                          {todo.text}
+                          {todo.description && (
+                            <span className="todo-widget-has-description" title="Has description">📝</span>
+                          )}
+                        </span>
+                        {todo.dueDate && (
+                          <span className={`todo-widget-due-date ${getDueDateClass(todo.dueDate)}`}>
+                            {formatDueDate(todo.dueDate)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteTodo(todo.id);
+                      }}
+                      className="todo-widget-delete-btn"
+                      title="Delete todo"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
 
-              {getTodosByHeading(heading.id).length === 0 && (
-                <div className="todo-widget-empty">
-                  Drop todos here
-                </div>
-              )}
+                {getTodosByHeading(heading.id).length === 0 && (
+                  <div className="todo-widget-empty">
+                    Drop todos here
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {selectedTodo && editingTodo && (
         <div className="todo-widget-modal-overlay" onClick={closeTodoModal}>

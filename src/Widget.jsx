@@ -688,6 +688,51 @@ export default function Widget() {
     }));
   };
 
+  const exportData = () => {
+    const dataToExport = {
+      version: '1.0',
+      exportDate: new Date().toISOString(),
+      data: data
+    };
+
+    const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const dateStr = new Date().toISOString().split('T')[0];
+    a.download = `todo-backup-${dateStr}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importData = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const imported = JSON.parse(e.target.result);
+
+        // Validate the imported data structure
+        if (imported.data && imported.data.todos && imported.data.headings) {
+          setData(imported.data);
+          alert(`Successfully imported ${imported.data.todos.length} tasks from ${new Date(imported.exportDate).toLocaleDateString()}`);
+        } else {
+          alert('Invalid backup file format');
+        }
+      } catch (error) {
+        alert('Error reading backup file: ' + error.message);
+      }
+    };
+    reader.readAsText(file);
+
+    // Reset the input so the same file can be imported again if needed
+    event.target.value = '';
+  };
+
   const formatDueDate = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
@@ -1017,15 +1062,31 @@ export default function Widget() {
   return (
     <div className="todo-widget">
       <div className="todo-widget-header">
-        <div className="todo-widget-header-top">
+        <div className="todo-widget-header-row">
           <h3>Todo List</h3>
-          <button
-            onClick={cleanupDone}
-            className="todo-widget-cleanup-btn"
-            title="Export and delete completed tasks"
-          >
-            Clean Up Done ({data.todos.filter(t => t.headingId === 'done').length})
-          </button>
+          <div className="todo-widget-backup-buttons">
+            <input
+              type="file"
+              accept=".json"
+              onChange={importData}
+              style={{ display: 'none' }}
+              id="import-file-input"
+            />
+            <button
+              onClick={exportData}
+              className="todo-widget-backup-btn"
+              title="Export backup"
+            >
+              Export
+            </button>
+            <button
+              onClick={() => document.getElementById('import-file-input').click()}
+              className="todo-widget-backup-btn"
+              title="Import backup"
+            >
+              Import
+            </button>
+          </div>
         </div>
         <div className="todo-widget-view-switcher">
           <button
@@ -1099,6 +1160,15 @@ export default function Widget() {
                 <span className="todo-widget-count">
                   {getTodosByHeading(heading.id).length}
                 </span>
+                {heading.id === 'done' && getTodosByHeading(heading.id).length > 0 && (
+                  <button
+                    onClick={cleanupDone}
+                    className="todo-widget-cleanup-btn-small"
+                    title="Export and delete completed tasks"
+                  >
+                    Clean Up
+                  </button>
+                )}
               </h4>
 
               <div className="todo-widget-items">

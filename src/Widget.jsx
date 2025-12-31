@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './Widget.css';
 
 const STORAGE_KEY = 'todo-widget-data';
@@ -166,6 +166,9 @@ export default function Widget() {
   const [currentView, setCurrentView] = useState(() => {
     return localStorage.getItem('todo-widget-view') || VIEWS.PLANNING;
   });
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  const newTodoInputRef = useRef(null);
 
   // Persist to localStorage whenever data changes
   useEffect(() => {
@@ -176,6 +179,168 @@ export default function Widget() {
   useEffect(() => {
     localStorage.setItem('todo-widget-view', currentView);
   }, [currentView]);
+
+  // Get visible todos for current view
+  const getVisibleTodos = () => {
+    if (currentView === VIEWS.PLANNING) {
+      return data.todos.filter(t => t.headingId === 'inbox').sort((a, b) => (a.rank || 0) - (b.rank || 0));
+    } else if (currentView === VIEWS.TODAY) {
+      return data.todos.filter(t => t.headingId === 'today').sort((a, b) => (a.rank || 0) - (b.rank || 0));
+    } else if (currentView === VIEWS.BOARD) {
+      // For board view, navigate left-to-right (by column), top-to-bottom (within column)
+      const columnOrder = ['backlog', 'today', 'done'];
+      const result = [];
+      columnOrder.forEach(headingId => {
+        const columnTodos = data.todos
+          .filter(t => t.headingId === headingId)
+          .sort((a, b) => (a.rank || 0) - (b.rank || 0));
+        result.push(...columnTodos);
+      });
+      return result;
+    } else if (currentView === VIEWS.CALENDAR) {
+      return data.todos.filter(t => t.dueDate && t.headingId !== 'done').sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+    }
+    return [];
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't handle shortcuts if user is typing in an input or modal is open
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || selectedTodo) {
+        // Handle Escape to close modal or unfocus input
+        if (e.key === 'Escape') {
+          if (selectedTodo) {
+            closeTodoModal();
+          } else if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+            e.target.blur();
+          }
+        }
+        return;
+      }
+
+      const visibleTodos = getVisibleTodos();
+      if (visibleTodos.length === 0 && !['1', '2', '3', '4', '?'].includes(e.key)) return;
+
+      switch (e.key) {
+        case 'ArrowDown':
+        case 'j':
+          e.preventDefault();
+          setSelectedIndex(prev => Math.min(prev + 1, visibleTodos.length - 1));
+          break;
+        case 'ArrowUp':
+        case 'k':
+          e.preventDefault();
+          setSelectedIndex(prev => Math.max(prev - 1, 0));
+          break;
+        case 'Enter':
+          e.preventDefault();
+          if (visibleTodos[selectedIndex]) {
+            openTodoModal(visibleTodos[selectedIndex]);
+          }
+          break;
+        case ' ':
+          e.preventDefault();
+          if (visibleTodos[selectedIndex]) {
+            toggleTodoDone(visibleTodos[selectedIndex].id);
+          }
+          break;
+        case 'i':
+          e.preventDefault();
+          if (visibleTodos[selectedIndex]) {
+            moveTodoToHeading(visibleTodos[selectedIndex].id, 'inbox');
+          }
+          break;
+        case 'b':
+          e.preventDefault();
+          if (visibleTodos[selectedIndex]) {
+            moveTodoToHeading(visibleTodos[selectedIndex].id, 'backlog');
+          }
+          break;
+        case 't':
+          e.preventDefault();
+          if (visibleTodos[selectedIndex]) {
+            moveTodoToHeading(visibleTodos[selectedIndex].id, 'today');
+          }
+          break;
+        case 'd':
+          e.preventDefault();
+          if (visibleTodos[selectedIndex]) {
+            moveTodoToHeading(visibleTodos[selectedIndex].id, 'done');
+          }
+          break;
+        case '1':
+          e.preventDefault();
+          setCurrentView(VIEWS.PLANNING);
+          setSelectedIndex(0);
+          break;
+        case '2':
+          e.preventDefault();
+          setCurrentView(VIEWS.TODAY);
+          setSelectedIndex(0);
+          break;
+        case '3':
+          e.preventDefault();
+          setCurrentView(VIEWS.BOARD);
+          setSelectedIndex(0);
+          break;
+        case '4':
+          e.preventDefault();
+          setCurrentView(VIEWS.CALENDAR);
+          setSelectedIndex(0);
+          break;
+        case '!': // Shift+1 - Jump to top of Backlog column
+          e.preventDefault();
+          if (currentView === VIEWS.BOARD) {
+            const backlogTodos = data.todos.filter(t => t.headingId === 'backlog').sort((a, b) => (a.rank || 0) - (b.rank || 0));
+            if (backlogTodos.length > 0) {
+              const allVisibleTodos = getVisibleTodos();
+              const firstBacklogIndex = allVisibleTodos.findIndex(t => t.id === backlogTodos[0].id);
+              if (firstBacklogIndex !== -1) setSelectedIndex(firstBacklogIndex);
+            }
+          }
+          break;
+        case '@': // Shift+2 - Jump to top of Today column
+          e.preventDefault();
+          if (currentView === VIEWS.BOARD) {
+            const todayTodos = data.todos.filter(t => t.headingId === 'today').sort((a, b) => (a.rank || 0) - (b.rank || 0));
+            if (todayTodos.length > 0) {
+              const allVisibleTodos = getVisibleTodos();
+              const firstTodayIndex = allVisibleTodos.findIndex(t => t.id === todayTodos[0].id);
+              if (firstTodayIndex !== -1) setSelectedIndex(firstTodayIndex);
+            }
+          }
+          break;
+        case '#': // Shift+3 - Jump to top of Done column
+          e.preventDefault();
+          if (currentView === VIEWS.BOARD) {
+            const doneTodos = data.todos.filter(t => t.headingId === 'done').sort((a, b) => (a.rank || 0) - (b.rank || 0));
+            if (doneTodos.length > 0) {
+              const allVisibleTodos = getVisibleTodos();
+              const firstDoneIndex = allVisibleTodos.findIndex(t => t.id === doneTodos[0].id);
+              if (firstDoneIndex !== -1) setSelectedIndex(firstDoneIndex);
+            }
+          }
+          break;
+        case 'n':
+          e.preventDefault();
+          if (newTodoInputRef.current) {
+            newTodoInputRef.current.focus();
+          }
+          break;
+        case '?':
+          e.preventDefault();
+          setShowKeyboardHelp(true);
+          break;
+        case 'Escape':
+          setShowKeyboardHelp(false);
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedIndex, data.todos, currentView, selectedTodo]);
 
   const addTodo = (e) => {
     e.preventDefault();
@@ -456,6 +621,73 @@ export default function Widget() {
       .sort((a, b) => (a.rank || 0) - (b.rank || 0));
   };
 
+  const cleanupDone = () => {
+    const doneTodos = data.todos.filter(t => t.headingId === 'done');
+
+    if (doneTodos.length === 0) {
+      alert('No completed tasks to clean up');
+      return;
+    }
+
+    // Generate markdown content
+    const now = new Date();
+    const dateString = now.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    let markdown = `# Completed Tasks - ${dateString}\n\n`;
+    markdown += `Total tasks completed: ${doneTodos.length}\n\n`;
+    markdown += `---\n\n`;
+
+    doneTodos
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      .forEach(todo => {
+        markdown += `## ${todo.text}\n\n`;
+
+        if (todo.dueDate) {
+          const dueDate = new Date(todo.dueDate).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+          });
+          markdown += `**Due Date:** ${dueDate}\n\n`;
+        }
+
+        if (todo.description) {
+          markdown += `${todo.description}\n\n`;
+        }
+
+        const createdDate = new Date(todo.createdAt).toLocaleString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        markdown += `*Created: ${createdDate}*\n\n`;
+        markdown += `---\n\n`;
+      });
+
+    // Create and download file
+    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `completed-tasks-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    // Remove completed todos
+    setData(prev => ({
+      ...prev,
+      todos: prev.todos.filter(t => t.headingId !== 'done')
+    }));
+  };
+
   const formatDueDate = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
@@ -495,6 +727,8 @@ export default function Widget() {
       .filter(t => t.headingId === 'inbox')
       .sort((a, b) => (a.rank || 0) - (b.rank || 0));
 
+    const visibleTodos = getVisibleTodos();
+
     return (
       <div className="todo-widget-planning-view">
         <div className="todo-widget-view-header">
@@ -507,13 +741,14 @@ export default function Widget() {
               Your inbox is empty! Add tasks above or switch to Board view to see all your tasks.
             </div>
           ) : (
-            inboxTodos.map(todo => (
+            inboxTodos.map((todo, index) => (
               <div
                 key={todo.id}
                 className={`todo-widget-planning-item
                   ${draggedTodo?.id === todo.id ? 'todo-widget-dragging' : ''}
                   ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'before' ? 'todo-widget-drop-before' : ''}
-                  ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'after' ? 'todo-widget-drop-after' : ''}`}
+                  ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'after' ? 'todo-widget-drop-after' : ''}
+                  ${visibleTodos[selectedIndex]?.id === todo.id ? 'todo-widget-planning-item-selected' : ''}`}
                 draggable
                 onDragStart={(e) => handleDragStart(e, todo)}
                 onDragOver={(e) => handleTodoDragOver(e, todo)}
@@ -584,13 +819,6 @@ export default function Widget() {
                       → Today
                     </button>
                   </div>
-                  <button
-                    onClick={() => deleteTodo(todo.id)}
-                    className="todo-widget-delete-btn"
-                    title="Delete"
-                  >
-                    ×
-                  </button>
                 </div>
               </div>
             ))
@@ -608,6 +836,8 @@ export default function Widget() {
       .filter(t => t.headingId === 'backlog')
       .sort((a, b) => (a.rank || 0) - (b.rank || 0));
 
+    const visibleTodos = getVisibleTodos();
+
     return (
       <div className="todo-widget-today-view">
         <div className="todo-widget-view-header">
@@ -620,13 +850,14 @@ export default function Widget() {
               No tasks for today. Move items from your backlog or inbox!
             </div>
           ) : (
-            todayTodos.map(todo => (
+            todayTodos.map((todo, index) => (
               <div
                 key={todo.id}
                 className={`todo-widget-today-item
                   ${draggedTodo?.id === todo.id ? 'todo-widget-dragging' : ''}
                   ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'before' ? 'todo-widget-drop-before' : ''}
-                  ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'after' ? 'todo-widget-drop-after' : ''}`}
+                  ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'after' ? 'todo-widget-drop-after' : ''}
+                  ${visibleTodos[selectedIndex]?.id === todo.id ? 'todo-widget-today-item-selected' : ''}`}
                 draggable
                 onDragStart={(e) => handleDragStart(e, todo)}
                 onDragOver={(e) => handleTodoDragOver(e, todo)}
@@ -662,13 +893,6 @@ export default function Widget() {
                   title="Edit task"
                 >
                   ✏️
-                </button>
-                <button
-                  onClick={() => deleteTodo(todo.id)}
-                  className="todo-widget-delete-btn"
-                  title="Delete"
-                >
-                  ×
                 </button>
               </div>
             ))
@@ -779,13 +1003,6 @@ export default function Widget() {
                       >
                         ✏️
                       </button>
-                      <button
-                        onClick={() => deleteTodo(todo.id)}
-                        className="todo-widget-delete-btn-small"
-                        title="Delete"
-                      >
-                        ×
-                      </button>
                     </div>
                   ))}
                 </div>
@@ -800,7 +1017,16 @@ export default function Widget() {
   return (
     <div className="todo-widget">
       <div className="todo-widget-header">
-        <h3>Todo List</h3>
+        <div className="todo-widget-header-top">
+          <h3>Todo List</h3>
+          <button
+            onClick={cleanupDone}
+            className="todo-widget-cleanup-btn"
+            title="Export and delete completed tasks"
+          >
+            Clean Up Done ({data.todos.filter(t => t.headingId === 'done').length})
+          </button>
+        </div>
         <div className="todo-widget-view-switcher">
           <button
             className={`todo-widget-view-tab ${currentView === VIEWS.PLANNING ? 'active' : ''}`}
@@ -831,6 +1057,7 @@ export default function Widget() {
 
       <form className="todo-widget-input" onSubmit={addTodo}>
         <input
+          ref={newTodoInputRef}
           type="text"
           value={newTodoText}
           onChange={(e) => setNewTodoText(e.target.value)}
@@ -853,11 +1080,14 @@ export default function Widget() {
       {currentView === VIEWS.BOARD && (
         <div className="todo-widget-columns">
           {data.headings
+            .filter(heading => heading.id !== 'inbox')
             .sort((a, b) => {
-              const order = ['inbox', 'backlog', 'today', 'done'];
+              const order = ['backlog', 'today', 'done'];
               return order.indexOf(a.id) - order.indexOf(b.id);
             })
-            .map(heading => (
+            .map(heading => {
+              const visibleTodos = getVisibleTodos();
+              return (
             <div
               key={heading.id}
               className="todo-widget-column"
@@ -878,7 +1108,8 @@ export default function Widget() {
                     className={`todo-widget-item
                       ${draggedTodo?.id === todo.id ? 'todo-widget-dragging' : ''}
                       ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'before' ? 'todo-widget-drop-before' : ''}
-                      ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'after' ? 'todo-widget-drop-after' : ''}`}
+                      ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'after' ? 'todo-widget-drop-after' : ''}
+                      ${visibleTodos[selectedIndex]?.id === todo.id ? 'todo-widget-item-selected' : ''}`}
                     draggable
                     onDragStart={(e) => handleDragStart(e, todo)}
                     onDragOver={(e) => handleTodoDragOver(e, todo)}
@@ -919,16 +1150,6 @@ export default function Widget() {
                     >
                       ✏️
                     </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteTodo(todo.id);
-                      }}
-                      className="todo-widget-delete-btn"
-                      title="Delete todo"
-                    >
-                      ×
-                    </button>
                   </div>
                 ))}
 
@@ -939,7 +1160,8 @@ export default function Widget() {
                 )}
               </div>
             </div>
-          ))}
+          );
+        })}
         </div>
       )}
 
@@ -1027,17 +1249,134 @@ export default function Widget() {
 
             <div className="todo-widget-modal-footer">
               <button
-                onClick={closeTodoModal}
-                className="todo-widget-modal-btn-cancel"
+                onClick={() => {
+                  deleteTodo(editingTodo.id);
+                }}
+                className="todo-widget-modal-btn-delete"
               >
-                Cancel
+                Delete
               </button>
+              <div className="todo-widget-modal-footer-right">
+                <button
+                  onClick={closeTodoModal}
+                  className="todo-widget-modal-btn-cancel"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveTodoChanges}
+                  className="todo-widget-modal-btn-save"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Keyboard Help Modal */}
+      {showKeyboardHelp && (
+        <div className="todo-widget-modal-overlay" onClick={() => setShowKeyboardHelp(false)}>
+          <div className="todo-widget-modal todo-widget-help-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="todo-widget-modal-header">
+              <h3>Keyboard Shortcuts</h3>
               <button
-                onClick={saveTodoChanges}
-                className="todo-widget-modal-btn-save"
+                onClick={() => setShowKeyboardHelp(false)}
+                className="todo-widget-modal-close"
+                title="Close"
               >
-                Save Changes
+                ×
               </button>
+            </div>
+            <div className="todo-widget-modal-body">
+              <div className="todo-widget-help-section">
+                <h4>Navigation</h4>
+                <div className="todo-widget-help-item">
+                  <kbd>↓</kbd> or <kbd>j</kbd>
+                  <span>Move down</span>
+                </div>
+                <div className="todo-widget-help-item">
+                  <kbd>↑</kbd> or <kbd>k</kbd>
+                  <span>Move up</span>
+                </div>
+                <div className="todo-widget-help-item">
+                  <kbd>Enter</kbd>
+                  <span>Open/edit selected task</span>
+                </div>
+              </div>
+              <div className="todo-widget-help-section">
+                <h4>Actions</h4>
+                <div className="todo-widget-help-item">
+                  <kbd>Space</kbd>
+                  <span>Toggle done/undone</span>
+                </div>
+                <div className="todo-widget-help-item">
+                  <kbd>i</kbd>
+                  <span>Move to Inbox</span>
+                </div>
+                <div className="todo-widget-help-item">
+                  <kbd>b</kbd>
+                  <span>Move to Backlog</span>
+                </div>
+                <div className="todo-widget-help-item">
+                  <kbd>t</kbd>
+                  <span>Move to Today</span>
+                </div>
+                <div className="todo-widget-help-item">
+                  <kbd>d</kbd>
+                  <span>Move to Done</span>
+                </div>
+              </div>
+              <div className="todo-widget-help-section">
+                <h4>Views</h4>
+                <div className="todo-widget-help-item">
+                  <kbd>1</kbd>
+                  <span>Planning view</span>
+                </div>
+                <div className="todo-widget-help-item">
+                  <kbd>2</kbd>
+                  <span>Today view</span>
+                </div>
+                <div className="todo-widget-help-item">
+                  <kbd>3</kbd>
+                  <span>Board view</span>
+                </div>
+                <div className="todo-widget-help-item">
+                  <kbd>4</kbd>
+                  <span>Calendar view</span>
+                </div>
+              </div>
+              <div className="todo-widget-help-section">
+                <h4>Board View (Column Jump)</h4>
+                <div className="todo-widget-help-item">
+                  <kbd>Shift+1</kbd>
+                  <span>Jump to Backlog column</span>
+                </div>
+                <div className="todo-widget-help-item">
+                  <kbd>Shift+2</kbd>
+                  <span>Jump to Today column</span>
+                </div>
+                <div className="todo-widget-help-item">
+                  <kbd>Shift+3</kbd>
+                  <span>Jump to Done column</span>
+                </div>
+              </div>
+              <div className="todo-widget-help-section">
+                <h4>Other</h4>
+                <div className="todo-widget-help-item">
+                  <kbd>n</kbd>
+                  <span>New todo (focus input)</span>
+                </div>
+                <div className="todo-widget-help-item">
+                  <kbd>?</kbd>
+                  <span>Show this help</span>
+                </div>
+                <div className="todo-widget-help-item">
+                  <kbd>Esc</kbd>
+                  <span>Close modal</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

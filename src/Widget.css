@@ -10,10 +10,39 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+.todo-widget-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
 .todo-widget-header h3 {
   margin: 0;
   font-size: 1.5rem;
   color: #333;
+}
+
+.todo-widget-cleanup-btn {
+  padding: 0.5rem 1rem;
+  background: #FF9800;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.todo-widget-cleanup-btn:hover {
+  background: #F57C00;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.todo-widget-cleanup-btn:active {
+  transform: translateY(0);
 }
 
 .todo-widget-input {
@@ -446,7 +475,13 @@
   border-top: 1px solid #e0e0e0;
   display: flex;
   gap: 0.75rem;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.todo-widget-modal-footer-right {
+  display: flex;
+  gap: 0.75rem;
 }
 
 .todo-widget-modal-btn-cancel,
@@ -476,6 +511,74 @@
 
 .todo-widget-modal-btn-save:hover {
   background: #45a049;
+}
+
+.todo-widget-modal-btn-delete {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #f44336;
+  color: white;
+}
+
+.todo-widget-modal-btn-delete:hover {
+  background: #d32f2f;
+}
+
+/* Keyboard Help Modal */
+.todo-widget-help-modal {
+  max-width: 600px;
+}
+
+.todo-widget-help-section {
+  margin-bottom: 1.5rem;
+}
+
+.todo-widget-help-section:last-child {
+  margin-bottom: 0;
+}
+
+.todo-widget-help-section h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.todo-widget-help-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  font-size: 0.9rem;
+}
+
+.todo-widget-help-item kbd {
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  padding: 0.25rem 0.5rem;
+  font-family: monospace;
+  font-size: 0.85rem;
+  min-width: 50px;
+  text-align: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.todo-widget-help-item span {
+  color: #666;
+}
+
+/* Selected item highlighting */
+.todo-widget-item-selected,
+.todo-widget-planning-item-selected,
+.todo-widget-today-item-selected {
+  box-shadow: 0 0 0 3px #4CAF50;
+  border-color: #4CAF50;
 }
 
 @media (max-width: 768px) {

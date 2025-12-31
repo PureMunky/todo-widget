@@ -5,7 +5,8 @@
   flex-direction: column;
   gap: 1rem;
   padding: 1.5rem;
-  background: white;
+  background: #ffffff;
+  color: #1a1a1a;
 }
 
 .todo-widget-header-row {
@@ -92,12 +93,13 @@
   border: 1px solid #e0e0e0;
   border-radius: 2px;
   font-size: 0.9rem;
-  background: white;
+  background: #ffffff;
+  color: #1a1a1a;
 }
 
 .todo-widget-text-input:focus {
   outline: none;
-  border-color: #000;
+  border-color: #000000;
 }
 
 .todo-widget-date-input {
@@ -106,18 +108,19 @@
   border-radius: 2px;
   font-size: 0.9rem;
   min-width: 140px;
-  background: white;
+  background: #ffffff;
+  color: #1a1a1a;
 }
 
 .todo-widget-date-input:focus {
   outline: none;
-  border-color: #000;
+  border-color: #000000;
 }
 
 .todo-widget-add-btn {
   padding: 0.5rem 1rem;
-  background: #000;
-  color: white;
+  background: #000000;
+  color: #ffffff;
   border: none;
   border-radius: 2px;
   font-size: 0.9rem;
@@ -127,7 +130,7 @@
 }
 
 .todo-widget-add-btn:hover {
-  background: #333;
+  background: #333333;
 }
 
 .todo-widget-columns {
@@ -178,7 +181,7 @@
 }
 
 .todo-widget-item {
-  background: white;
+  background: #ffffff;
   border: 1px solid #e5e5e5;
   border-radius: 2px;
   padding: 0.6rem;
@@ -187,6 +190,7 @@
   align-items: center;
   justify-content: space-between;
   transition: border-color 0.15s;
+  color: #1a1a1a;
 }
 
 .todo-widget-item:active {
@@ -346,7 +350,7 @@
 }
 
 .todo-widget-modal {
-  background: white;
+  background: #ffffff;
   border: 1px solid #e0e0e0;
   border-radius: 2px;
   width: 100%;
@@ -355,6 +359,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  color: #1a1a1a;
 }
 
 .todo-widget-modal-header {
@@ -421,13 +426,14 @@
   border-radius: 2px;
   font-size: 0.9rem;
   font-family: inherit;
-  background: white;
+  background: #ffffff;
+  color: #1a1a1a;
 }
 
 .todo-widget-modal-input:focus,
 .todo-widget-modal-textarea:focus {
   outline: none;
-  border-color: #000;
+  border-color: #000000;
 }
 
 .todo-widget-modal-textarea {
@@ -531,12 +537,12 @@
 }
 
 .todo-widget-modal-btn-save {
-  background: #000;
-  color: white;
+  background: #000000;
+  color: #ffffff;
 }
 
 .todo-widget-modal-btn-save:hover {
-  background: #333;
+  background: #333333;
 }
 
 .todo-widget-modal-btn-delete {
@@ -604,7 +610,7 @@
 .todo-widget-item-selected,
 .todo-widget-planning-item-selected,
 .todo-widget-today-item-selected {
-  border-color: #000;
+  border-color: #000000;
   background: #fafafa;
 }
 
@@ -664,8 +670,8 @@
 }
 
 .todo-widget-view-tab.active {
-  color: #000;
-  border-bottom-color: #000;
+  color: #000000;
+  border-bottom-color: #000000;
 }
 
 /* View Headers */
@@ -729,12 +735,13 @@
 }
 
 .todo-widget-planning-item {
-  background: white;
+  background: #ffffff;
   border: 1px solid #e5e5e5;
   border-radius: 2px;
   padding: 0.75rem;
   cursor: grab;
   transition: border-color 0.15s;
+  color: #1a1a1a;
 }
 
 .todo-widget-planning-item:active {
@@ -781,12 +788,13 @@
   border: 1px solid #e0e0e0;
   border-radius: 2px;
   font-size: 0.8rem;
-  background: white;
+  background: #ffffff;
+  color: #1a1a1a;
 }
 
 .todo-widget-inline-date:focus {
   outline: none;
-  border-color: #000;
+  border-color: #000000;
 }
 
 .todo-widget-snooze-buttons {
@@ -823,8 +831,8 @@
   font-weight: 400;
   cursor: pointer;
   transition: all 0.15s;
-  background: white;
-  color: #666;
+  background: #ffffff;
+  color: #666666;
 }
 
 .todo-widget-move-backlog {
@@ -832,17 +840,17 @@
 }
 
 .todo-widget-move-backlog:hover {
-  border-color: #999;
-  color: #000;
+  border-color: #999999;
+  color: #000000;
 }
 
 .todo-widget-move-today {
-  border-color: #ddd;
+  border-color: #dddddd;
 }
 
 .todo-widget-move-today:hover {
-  border-color: #999;
-  color: #000;
+  border-color: #999999;
+  color: #000000;
 }
 
 /* Today View */
@@ -858,7 +866,7 @@
 }
 
 .todo-widget-today-item {
-  background: white;
+  background: #ffffff;
   border: 1px solid #e5e5e5;
   border-radius: 2px;
   padding: 0.75rem;
@@ -867,6 +875,7 @@
   gap: 0.75rem;
   align-items: flex-start;
   transition: border-color 0.15s;
+  color: #1a1a1a;
 }
 
 .todo-widget-today-item:active {
@@ -1043,10 +1052,11 @@
 }
 
 .todo-widget-calendar-group {
-  background: white;
+  background: #ffffff;
   border: 1px solid #e5e5e5;
   border-radius: 2px;
   overflow: hidden;
+  color: #1a1a1a;
 }
 
 .todo-widget-calendar-date {

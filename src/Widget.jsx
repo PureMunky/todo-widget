@@ -134,7 +134,27 @@ const renderMarkdown = (text) => {
 export default function Widget() {
   const [data, setData] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : DEFAULT_DATA;
+    let parsedData = saved ? JSON.parse(saved) : DEFAULT_DATA;
+
+    // Migration: Rename 'upcoming' to 'backlog' for existing data
+    if (parsedData.headings) {
+      parsedData.headings = parsedData.headings.map(h =>
+        h.id === 'upcoming' ? { ...h, id: 'backlog', title: 'Backlog' } : h
+      );
+      parsedData.todos = parsedData.todos.map(t =>
+        t.headingId === 'upcoming' ? { ...t, headingId: 'backlog' } : t
+      );
+    }
+
+    // Migration: Add rank to existing todos
+    if (parsedData.todos) {
+      parsedData.todos = parsedData.todos.map((t, index) => ({
+        ...t,
+        rank: t.rank !== undefined ? t.rank : index * 1000
+      }));
+    }
+
+    return parsedData;
   });
 
   const [newTodoText, setNewTodoText] = useState('');
@@ -142,6 +162,7 @@ export default function Widget() {
   const [draggedTodo, setDraggedTodo] = useState(null);
   const [selectedTodo, setSelectedTodo] = useState(null);
   const [editingTodo, setEditingTodo] = useState(null);
+  const [dropIndicator, setDropIndicator] = useState(null); // { todoId, position: 'before' | 'after' }
   const [currentView, setCurrentView] = useState(() => {
     return localStorage.getItem('todo-widget-view') || VIEWS.PLANNING;
   });
@@ -163,12 +184,19 @@ export default function Widget() {
     // Parse smart dates from text
     const parsed = parseDateFromText(newTodoText);
 
+    // Get highest rank in inbox and add 1000
+    const inboxTodos = data.todos.filter(t => t.headingId === 'inbox');
+    const maxRank = inboxTodos.length > 0
+      ? Math.max(...inboxTodos.map(t => t.rank || 0))
+      : 0;
+
     const newTodo = {
       id: Date.now().toString(),
       text: parsed.text,
       description: '',
       dueDate: parsed.dueDate || newTodoDueDate || null,
       headingId: 'inbox',
+      rank: maxRank + 1000,
       createdAt: new Date().toISOString()
     };
 
@@ -275,7 +303,68 @@ export default function Widget() {
     }));
   };
 
+  // Reorder a todo within its list
+  const reorderTodo = (todoId, targetTodoId, insertBefore = true) => {
+    setData(prev => {
+      const todos = [...prev.todos];
+      const draggedIndex = todos.findIndex(t => t.id === todoId);
+      const targetIndex = todos.findIndex(t => t.id === targetTodoId);
+
+      if (draggedIndex === -1 || targetIndex === -1) return prev;
+
+      const draggedTodo = todos[draggedIndex];
+      const targetTodo = todos[targetIndex];
+
+      // Calculate new rank
+      let newRank;
+      if (insertBefore) {
+        // Insert before target
+        const prevTodo = todos.find((t, i) =>
+          i < targetIndex &&
+          t.headingId === targetTodo.headingId &&
+          t.rank < targetTodo.rank
+        );
+        const prevRank = prevTodo?.rank || targetTodo.rank - 1000;
+        newRank = (prevRank + targetTodo.rank) / 2;
+      } else {
+        // Insert after target
+        const nextTodo = todos.find((t, i) =>
+          i > targetIndex &&
+          t.headingId === targetTodo.headingId &&
+          t.rank > targetTodo.rank
+        );
+        const nextRank = nextTodo?.rank || targetTodo.rank + 1000;
+        newRank = (targetTodo.rank + nextRank) / 2;
+      }
+
+      return {
+        ...prev,
+        todos: todos.map(t =>
+          t.id === todoId
+            ? { ...t, rank: newRank, headingId: targetTodo.headingId }
+            : t
+        )
+      };
+    });
+  };
+
   const handleDragStart = (e, todo) => {
+    // Don't start drag if clicking on interactive elements
+    const target = e.target;
+    const isInteractive =
+      target.tagName === 'A' ||
+      target.tagName === 'BUTTON' ||
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.closest('a') ||
+      target.closest('button') ||
+      target.closest('input');
+
+    if (isInteractive) {
+      e.preventDefault();
+      return false;
+    }
+
     setDraggedTodo(todo);
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -289,11 +378,17 @@ export default function Widget() {
     e.preventDefault();
     if (!draggedTodo) return;
 
+    // Get highest rank in target heading
+    const targetTodos = data.todos.filter(t => t.headingId === headingId);
+    const maxRank = targetTodos.length > 0
+      ? Math.max(...targetTodos.map(t => t.rank || 0))
+      : 0;
+
     setData(prev => ({
       ...prev,
       todos: prev.todos.map(t =>
         t.id === draggedTodo.id
-          ? { ...t, headingId }
+          ? { ...t, headingId, rank: maxRank + 1000 }
           : t
       )
     }));
@@ -303,10 +398,62 @@ export default function Widget() {
 
   const handleDragEnd = () => {
     setDraggedTodo(null);
+    setDropIndicator(null);
+  };
+
+  // Handle drag over a specific todo (for reordering)
+  const handleTodoDragOver = (e, targetTodo) => {
+    // Don't interfere with links or other interactive elements
+    if (e.target.tagName === 'A' || e.target.closest('a')) {
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+
+    if (!draggedTodo || draggedTodo.id === targetTodo.id) {
+      setDropIndicator(null);
+      return;
+    }
+
+    // Determine if we should insert before or after based on mouse position
+    const rect = e.currentTarget.getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+    const position = e.clientY < midpoint ? 'before' : 'after';
+
+    setDropIndicator({ todoId: targetTodo.id, position });
+  };
+
+  // Handle drop on a specific todo (for reordering)
+  const handleTodoDrop = (e, targetTodo) => {
+    // Don't interfere with links or other interactive elements
+    if (e.target.tagName === 'A' || e.target.closest('a')) {
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!draggedTodo || draggedTodo.id === targetTodo.id) {
+      setDropIndicator(null);
+      return;
+    }
+
+    // Determine if we should insert before or after based on mouse position
+    const rect = e.currentTarget.getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+    const insertBefore = e.clientY < midpoint;
+
+    reorderTodo(draggedTodo.id, targetTodo.id, insertBefore);
+    setDraggedTodo(null);
+    setDropIndicator(null);
   };
 
   const getTodosByHeading = (headingId) => {
-    return data.todos.filter(t => t.headingId === headingId);
+    return data.todos
+      .filter(t => t.headingId === headingId)
+      .sort((a, b) => (a.rank || 0) - (b.rank || 0));
   };
 
   const formatDueDate = (dateString) => {
@@ -346,28 +493,33 @@ export default function Widget() {
   const renderPlanningView = () => {
     const inboxTodos = data.todos
       .filter(t => t.headingId === 'inbox')
-      .sort((a, b) => {
-        // Sort by due date (null dates last)
-        if (!a.dueDate && !b.dueDate) return 0;
-        if (!a.dueDate) return 1;
-        if (!b.dueDate) return -1;
-        return new Date(a.dueDate) - new Date(b.dueDate);
-      });
+      .sort((a, b) => (a.rank || 0) - (b.rank || 0));
 
     return (
       <div className="todo-widget-planning-view">
         <div className="todo-widget-view-header">
           <h4>Planning - Inbox ({inboxTodos.length})</h4>
-          <p className="todo-widget-view-subtitle">Sort tasks by priority and move them to your backlog or today's list</p>
+          <p className="todo-widget-view-subtitle">Process your inbox and move tasks to backlog or today</p>
         </div>
         <div className="todo-widget-planning-list">
           {inboxTodos.length === 0 ? (
             <div className="todo-widget-empty">
-              Your inbox is empty! Add a task above or you're all caught up.
+              Your inbox is empty! Add tasks above or switch to Board view to see all your tasks.
             </div>
           ) : (
             inboxTodos.map(todo => (
-              <div key={todo.id} className="todo-widget-planning-item">
+              <div
+                key={todo.id}
+                className={`todo-widget-planning-item
+                  ${draggedTodo?.id === todo.id ? 'todo-widget-dragging' : ''}
+                  ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'before' ? 'todo-widget-drop-before' : ''}
+                  ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'after' ? 'todo-widget-drop-after' : ''}`}
+                draggable
+                onDragStart={(e) => handleDragStart(e, todo)}
+                onDragOver={(e) => handleTodoDragOver(e, todo)}
+                onDrop={(e) => handleTodoDrop(e, todo)}
+                onDragEnd={handleDragEnd}
+              >
                 <div className="todo-widget-planning-item-main">
                   <input
                     type="checkbox"
@@ -375,7 +527,7 @@ export default function Widget() {
                     onChange={() => moveTodoToHeading(todo.id, 'done')}
                     className="todo-widget-checkbox"
                   />
-                  <div className="todo-widget-planning-item-content" onClick={(e) => openTodoModal(todo, e)}>
+                  <div className="todo-widget-planning-item-content">
                     <span className="todo-widget-planning-item-text">
                       {todo.text}
                       {todo.description && <span className="todo-widget-has-description">📝</span>}
@@ -386,6 +538,13 @@ export default function Widget() {
                       </span>
                     )}
                   </div>
+                  <button
+                    onClick={(e) => openTodoModal(todo, e)}
+                    className="todo-widget-edit-btn"
+                    title="Edit task"
+                  >
+                    ✏️
+                  </button>
                 </div>
                 <div className="todo-widget-planning-item-actions">
                   <input
@@ -442,7 +601,12 @@ export default function Widget() {
   };
 
   const renderTodayView = () => {
-    const todayTodos = data.todos.filter(t => t.headingId === 'today');
+    const todayTodos = data.todos
+      .filter(t => t.headingId === 'today')
+      .sort((a, b) => (a.rank || 0) - (b.rank || 0));
+    const backlogTodos = data.todos
+      .filter(t => t.headingId === 'backlog')
+      .sort((a, b) => (a.rank || 0) - (b.rank || 0));
 
     return (
       <div className="todo-widget-today-view">
@@ -457,14 +621,25 @@ export default function Widget() {
             </div>
           ) : (
             todayTodos.map(todo => (
-              <div key={todo.id} className="todo-widget-today-item">
+              <div
+                key={todo.id}
+                className={`todo-widget-today-item
+                  ${draggedTodo?.id === todo.id ? 'todo-widget-dragging' : ''}
+                  ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'before' ? 'todo-widget-drop-before' : ''}
+                  ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'after' ? 'todo-widget-drop-after' : ''}`}
+                draggable
+                onDragStart={(e) => handleDragStart(e, todo)}
+                onDragOver={(e) => handleTodoDragOver(e, todo)}
+                onDrop={(e) => handleTodoDrop(e, todo)}
+                onDragEnd={handleDragEnd}
+              >
                 <input
                   type="checkbox"
                   checked={false}
                   onChange={() => moveTodoToHeading(todo.id, 'done')}
                   className="todo-widget-checkbox-large"
                 />
-                <div className="todo-widget-today-item-content" onClick={(e) => openTodoModal(todo, e)}>
+                <div className="todo-widget-today-item-content">
                   <span className="todo-widget-today-item-text">
                     {todo.text}
                     {todo.description && <span className="todo-widget-has-description">📝</span>}
@@ -475,11 +650,19 @@ export default function Widget() {
                     </span>
                   )}
                   {todo.description && (
-                    <div className="todo-widget-today-description-preview">
-                      {todo.description.substring(0, 100)}...
-                    </div>
+                    <div
+                      className="todo-widget-today-description-preview"
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(todo.description) }}
+                    />
                   )}
                 </div>
+                <button
+                  onClick={(e) => openTodoModal(todo, e)}
+                  className="todo-widget-edit-btn"
+                  title="Edit task"
+                >
+                  ✏️
+                </button>
                 <button
                   onClick={() => deleteTodo(todo.id)}
                   className="todo-widget-delete-btn"
@@ -491,6 +674,47 @@ export default function Widget() {
             ))
           )}
         </div>
+
+        {/* Backlog Section */}
+        {backlogTodos.length > 0 && (
+          <div className="todo-widget-today-backlog">
+            <h5 className="todo-widget-today-backlog-title">
+              Backlog ({backlogTodos.length})
+              <span className="todo-widget-today-backlog-subtitle">Pull tasks up when ready</span>
+            </h5>
+            <div className="todo-widget-today-backlog-list">
+              {backlogTodos.map(todo => (
+                <div key={todo.id} className="todo-widget-today-backlog-item">
+                  <div className="todo-widget-today-backlog-item-content">
+                    <span className="todo-widget-today-backlog-item-text">
+                      {todo.text}
+                      {todo.description && <span className="todo-widget-has-description">📝</span>}
+                    </span>
+                    {todo.dueDate && (
+                      <span className={`todo-widget-due-date ${getDueDateClass(todo.dueDate)}`}>
+                        {formatDueDate(todo.dueDate)}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={(e) => openTodoModal(todo, e)}
+                    className="todo-widget-edit-btn-small"
+                    title="Edit task"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={() => moveTodoToHeading(todo.id, 'today')}
+                    className="todo-widget-today-backlog-pull-btn"
+                    title="Move to Today"
+                  >
+                    ↑ Today
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -542,12 +766,19 @@ export default function Widget() {
                         onChange={() => moveTodoToHeading(todo.id, 'done')}
                         className="todo-widget-checkbox"
                       />
-                      <div className="todo-widget-calendar-item-content" onClick={(e) => openTodoModal(todo, e)}>
+                      <div className="todo-widget-calendar-item-content">
                         <span>{todo.text}</span>
                         <span className="todo-widget-calendar-item-category">
                           {data.headings.find(h => h.id === todo.headingId)?.title}
                         </span>
                       </div>
+                      <button
+                        onClick={(e) => openTodoModal(todo, e)}
+                        className="todo-widget-edit-btn-small"
+                        title="Edit task"
+                      >
+                        ✏️
+                      </button>
                       <button
                         onClick={() => deleteTodo(todo.id)}
                         className="todo-widget-delete-btn-small"
@@ -621,7 +852,12 @@ export default function Widget() {
 
       {currentView === VIEWS.BOARD && (
         <div className="todo-widget-columns">
-          {data.headings.map(heading => (
+          {data.headings
+            .sort((a, b) => {
+              const order = ['inbox', 'backlog', 'today', 'done'];
+              return order.indexOf(a.id) - order.indexOf(b.id);
+            })
+            .map(heading => (
             <div
               key={heading.id}
               className="todo-widget-column"
@@ -639,9 +875,14 @@ export default function Widget() {
                 {getTodosByHeading(heading.id).map(todo => (
                   <div
                     key={todo.id}
-                    className={`todo-widget-item ${draggedTodo?.id === todo.id ? 'todo-widget-dragging' : ''}`}
+                    className={`todo-widget-item
+                      ${draggedTodo?.id === todo.id ? 'todo-widget-dragging' : ''}
+                      ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'before' ? 'todo-widget-drop-before' : ''}
+                      ${dropIndicator?.todoId === todo.id && dropIndicator?.position === 'after' ? 'todo-widget-drop-after' : ''}`}
                     draggable
                     onDragStart={(e) => handleDragStart(e, todo)}
+                    onDragOver={(e) => handleTodoDragOver(e, todo)}
+                    onDrop={(e) => handleTodoDrop(e, todo)}
                     onDragEnd={handleDragEnd}
                   >
                     <div className="todo-widget-item-content">
@@ -654,10 +895,7 @@ export default function Widget() {
                         }}
                         className="todo-widget-checkbox"
                       />
-                      <div
-                        className="todo-widget-item-text"
-                        onClick={(e) => openTodoModal(todo, e)}
-                      >
+                      <div className="todo-widget-item-text">
                         <span className={todo.headingId === 'done' ? 'todo-widget-done-text' : ''}>
                           {todo.text}
                           {todo.description && (
@@ -671,6 +909,16 @@ export default function Widget() {
                         )}
                       </div>
                     </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openTodoModal(todo, e);
+                      }}
+                      className="todo-widget-edit-btn"
+                      title="Edit task"
+                    >
+                      ✏️
+                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
